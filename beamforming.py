@@ -1,9 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 # ? a program a terracsot ugy hozza letre h minden koordinata egesz lesz
 # ? ez lehet h problemas ha pontos egysegekben akarunk szamolni
 
-t = np.arange(0, 10)
+# T = np.arange(0, 10, 0.01)
+dt = 0.1
 c = 340  # m/s hangsebesseg
 f = 5  # hz frekvencia
 res = 0.1  # a felbontasa a ternek
@@ -11,7 +13,10 @@ space_dims = np.array([100.0, 100.0])  # a ter merete amiben dolgozunk
 coord = np.zeros(
     (int(space_dims[0] / res), int(space_dims[1] / res)), dtype=float
 )  # minden pont koordinataja
-print(coord.shape)
+
+img = plt.imshow(coord, cmap="plasma")
+plt.colorbar()
+
 s_coord = np.array(
     [3 / res, 5 / res]
 )  # ? ezeket lehet at kell allitani (a source helye)
@@ -28,13 +33,9 @@ def Single_sound_source(f, c, coord, t, fi, s_coord):  # this is a sinusoidal so
             z = np.sin(
                 2 * np.pi * f / c * dist - 2 * np.pi * f * t - fi
             )  # ? csekk h jo-e (ez adja meg a kiterest)
-            coord[j, i] += z
+            coord[j, i] = z  #! erre itt figyelj
+    return coord
 
-
-# s_coord_2 = np.array([10 / res, 20 / res])
-
-Single_sound_source(f, c, coord, 0, 0, s_coord)
-# Single_sound_source(f, c, coord, 0, 0, s_coord_2)
 
 center_mic = np.array([70 / res, 60 / res])  # a mikrofonkor kozepe
 num_mics = 7  # hany mikrofonnal dolgozunk
@@ -57,11 +58,27 @@ def Mic_array(center_mic, num_mics, mic_coord, mic_results):
         print(f"{mic_results[i]:.2f}")
 
 
-Mic_array(center_mic, num_mics, mic_coord, mic_results)
+# for i in range(10):
+#     nana = Single_sound_source(f, c, coord, i * dt, 0, s_coord)
+#     print(nana)
+#     plt.imshow(nana)
+#     plt.show()
 
 
-plt.imshow(coord, cmap="inferno")
-plt.colorbar()
-plt.scatter(mic_coord[:, 0], mic_coord[:, 1], c="#79E614", marker="x")
-plt.legend()
+def update(frame):
+    img.set_array(Single_sound_source(f, c, coord, frame * dt, 0, s_coord))
+    return (img,)
+
+
+animation = FuncAnimation(plt.gcf(), update, frames=50, interval=dt * 10)
 plt.show()
+
+
+# Mic_array(center_mic, num_mics, mic_coord, mic_results)
+
+
+# plt.imshow(coord, cmap="inferno")
+# plt.colorbar()
+# plt.scatter(mic_coord[:, 0], mic_coord[:, 1], c="#79E614", marker="x")
+# plt.legend()
+# plt.show()
