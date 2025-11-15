@@ -36,7 +36,7 @@ def Single_sound_source(f, c, coord, t, fi, s_coord):  # this is a sinusoidal so
 
 center_mic = np.array([70 / res, 60 / res])  # a mikrofonkor kozepe
 num_mics = 7  # hany mikrofonnal dolgozunk
-mic_radius = 5 / res  # mekkor a kor sugara
+mic_radius = 5 / res  # mekkora a kor sugara
 
 mic_coord = np.zeros((num_mics, 2))
 mic_results = np.zeros((num_mics, len(t)))
