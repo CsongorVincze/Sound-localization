@@ -1,4 +1,5 @@
 import numpy as np
+import scipy
 import time
 import sounddevice as sd
 
@@ -22,23 +23,18 @@ def audio_callback(indata, frames, time, status):
 
     # --- YOUR REAL-TIME ANALYSIS GOES HERE ---
 
-    # stack channels and compute FFTs for all at once
-    mic_stack = np.vstack(
-        [
-            indata[:, 1],
-            indata[:, 2],
-            indata[:, 3],
-            indata[:, 4],
-        ]  #! itt nemtom h jok-e az indexek
-    )  # shape (4, frames)
-    fft_data = np.abs(np.fft.rfft(mic_stack, axis=1))  # shape (4, n_fft_bins)
+    # atmegyunk minden mikrofonnal freq domainbe
+    freqs_ = np.vstack([scipy.fft.fft(indata[:, i]) for i in range(1, 5)])
+    freqs_conj = np.conj(freqs_)
 
-    # compute frequency axis and dominant frequency per channel (as ints)
-    freqs = np.fft.rfftfreq(indata[:, 1].size, d=1.0 / SAMPLE_RATE)
-    peak_idxs = np.argmax(fft_data, axis=1)  # one index per channel
-    dominant_freq = freqs[peak_idxs].astype(int)  # array of ints, shape (4,)
+    S = np.einsum("ij, kj -> ikj", freqs_, freqs_conj)
 
-    print(dominant_freq)
+    epsilon = 0.001
+    R = scipy.fft.ifft(S / (np.abs(S) + epsilon)) #!itt lehet hogy rossz indexre ifft-zunk
+    #! meg itt nem vesztunk el minden adatot azzal h leosztunk mert az exp(i*omega*t) az mindig megvan nem?
+    print(np.argmax(R) / SAMPLE_RATE)
+
+    # print(np.max(np.abs(freqs_), axis=1))  # kiirjuk a max ertekeket
 
     # --- END OF ANALYSIS ---
 
