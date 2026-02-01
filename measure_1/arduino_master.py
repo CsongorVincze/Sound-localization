@@ -1,7 +1,7 @@
 """
 Arduino Calibration Master - DoA Measurement System
 Controls a stepper motor and sound source to measure DoA algorithm accuracy.
-Specifically targets ReSpeaker v2.0 hardware.
+Compares multiple algorithms: GCC-PHAT, SRP-PHAT, Basic CC, MUSIC
 """
 import serial
 import serial.tools.list_ports
@@ -9,7 +9,7 @@ import time
 import sounddevice as sd
 import numpy as np
 import matplotlib.pyplot as plt
-from my_algos import get_gcc_phat_angle
+from my_algos import get_gcc_phat_angle, get_srp_phat_angle, get_basic_cc_angle, get_music_angle
 
 # =============================================================================
 # CONFIGURATION
@@ -20,13 +20,51 @@ SAMPLE_RATE = 16000
 RECORDING_DURATION = 1.0
 STEP_INCREMENT = 5     # degrees
 TOTAL_STEPS = 36       # 180 degrees total
+DEFAULT_START_ANGLE = 45  # Default servo home position
+
+# Algorithm definitions
+ALGORITHMS = [
+    ("GCC-PHAT", get_gcc_phat_angle, "#00d2ff"),
+    ("SRP-PHAT", get_srp_phat_angle, "#4ecdc4"),
+    ("Basic CC", get_basic_cc_angle, "#ff6b6b"),
+    ("MUSIC", get_music_angle, "#ffe66d"),
+]
 
 # =============================================================================
-# SETUP
+# HELPER FUNCTIONS
+# =============================================================================
+
+def send_goto(ser, angle):
+    """Send GOTO command to move servo smoothly to target angle."""
+    cmd = f"G{angle:03d}"
+    ser.write(cmd.encode())
+    # Wait for READY
+    while True:
+        line = ser.readline().decode().strip()
+        if line == "READY":
+            return True
+        if line == "ERROR":
+            return False
+
+def send_play(ser):
+    """Send PLAY command to trigger sound."""
+    ser.write(b'P')
+    # Don't wait - we're recording
+
+def send_reset(ser):
+    """Send RESET command to return to 0°."""
+    ser.write(b'R')
+    while True:
+        line = ser.readline().decode().strip()
+        if line == "RESET_DONE":
+            return
+
+# =============================================================================
+# MAIN
 # =============================================================================
 
 print("=" * 60)
-print(" Arduino/ReSpeaker Calibration System")
+print(" DoA Algorithm Calibration System")
 print("=" * 60)
 
 # 1. Connect to Arduino
@@ -47,6 +85,7 @@ if not COM_PORT:
 try:
     ard = serial.Serial(COM_PORT, BAUD_RATE, timeout=2)
     time.sleep(2)
+    ard.read_all()  # Clear buffer
     print(f"    Connected to Arduino on {COM_PORT}")
 except Exception as e:
     print(f"ERROR: Could not open {COM_PORT}: {e}")
@@ -59,7 +98,6 @@ devices = sd.query_devices()
 
 for i, dev in enumerate(devices):
     if dev['max_input_channels'] >= 4:
-        # Check for ReSpeaker signature
         name = dev['name'].lower()
         if 'respeaker' in name or 'uac1.0' in name or 'seeed' in name:
             respeaker_id = i
@@ -67,82 +105,55 @@ for i, dev in enumerate(devices):
             break
 
 if respeaker_id is None:
-    print("ERROR: ReSpeaker not found! Please connect device via USB.")
+    print("ERROR: ReSpeaker not found!")
     ard.close()
     exit(1)
 
 # =============================================================================
-# ALIGNMENT PHASE
+# ALIGNMENT MODE (Optional)
 # =============================================================================
 
 print("\n" + "=" * 60)
-print(" Zero Alignment (Manual Servo Control)")
+print(" Alignment Mode")
 print("=" * 60)
-print("    Enter a servo angle (0-180) to move the motor.")
-print("    The system will play a sound and show the measured DoA.")
-print("    Find the servo angle providing ~0° DoA.")
-print("    Type 'q' or 'done' to start calibration from that position.")
+print(f"    Default start angle: {DEFAULT_START_ANGLE}°")
+print("    Enter an angle (0-180) to test, or:")
+print("    - 'skip' to start measurement from default")
+print("    - 'done' to start measurement from current position")
 
-current_servo_angle = 0
-alignment_offset = 0
+current_servo_angle = DEFAULT_START_ANGLE
+
+# Move to default position
+print(f"\n    Moving to default position ({DEFAULT_START_ANGLE}°)...", end=" ", flush=True)
+send_goto(ard, DEFAULT_START_ANGLE)
+print("OK")
 
 try:
-    # Reset first
-    ard.write(b'R')
-    time.sleep(1)
-    ard.read_all()
-    
     while True:
-        user_input = input(f"\n    Enter Servo Angle (current {current_servo_angle}°): ").strip().lower()
+        user_input = input(f"\n    Servo [{current_servo_angle}°] > ").strip().lower()
         
-        if user_input in ['q', 'done', 'exit']:
-            print(f"    Alignment accepted. Starting scan from {current_servo_angle}°.")
-            alignment_offset = current_servo_angle
+        if user_input in ['skip', 's']:
+            current_servo_angle = DEFAULT_START_ANGLE
+            print(f"    Using default: {DEFAULT_START_ANGLE}°")
+            break
+            
+        if user_input in ['done', 'd', 'q', '']:
+            print(f"    Starting from {current_servo_angle}°")
             break
             
         try:
             target_angle = int(user_input)
             if target_angle < 0 or target_angle > 180:
-                print("    ERROR: Angle must be 0-180")
+                print("    Error: Angle must be 0-180")
                 continue
-                
-            # Move Servo
-            # We don't have a direct 'Move to X' command in the simple Arduino code
-            # We only have 'M' (step) and 'R' (reset).
-            # So we reset and step up to target.
-            
-            # actually, let's just use the relative steps if possible, or Reset and step.
-            # Since our Arduino code is simple (only 'M' steps by 5 deg), 
-            # we might need to modify Arduino code to go to absolute position OR
-            # just be clever here.
-            
-            # Current Arduino Logic:
-            # 'R' -> 0
-            # 'M' -> current + 5
-            
-            # To go to arbitrary angle X:
-            # Reset, then send 'M' (X / 5) times.
             
             print(f"    Moving to {target_angle}°...", end=" ", flush=True)
-            ard.write(b'R')
-             # Wait for reset
-            while True:
-                line = ard.readline().decode().strip()
-                if line == "RESET_DONE":
-                    break
-            
-            steps_needed = int(target_angle / STEP_INCREMENT)
-            for _ in range(steps_needed):
-                ard.write(b'M')
-                # Wait for ready each step or just spam? 
-                # Better to wait to be safe, though slow.
-                while str(ard.readline().decode().strip()) != "READY": pass
-            
+            send_goto(ard, target_angle)
             current_servo_angle = target_angle
             print("OK")
             
-            # Record & Measure
-            print("    Ping...", end=" ", flush=True)
+            # Ping and measure
+            print("    Measuring...", end=" ", flush=True)
             recording = sd.rec(
                 int(1.0 * SAMPLE_RATE),
                 samplerate=SAMPLE_RATE,
@@ -151,73 +162,85 @@ try:
                 dtype='int16'
             )
             time.sleep(0.1)
-            ard.write(b'P')
+            send_play(ard)
             sd.wait()
             
-            # Calculate
             raw_audio = recording[:, 1:5].astype(np.float64)
             est_angle = get_gcc_phat_angle(raw_audio, SAMPLE_RATE)
-            
             err = est_angle if est_angle < 180 else est_angle - 360
-            print(f" DoA: {est_angle:5.1f}° (Error: {err:5.1f}°)")
+            print(f"DoA: {est_angle:5.1f}° (offset: {err:+5.1f}°)")
             
         except ValueError:
-            print("    Invalid input. Enter a number.")
+            print("    Invalid input. Enter a number or 'done'/'skip'.")
 
 except KeyboardInterrupt:
-    print("\n    Alignment cancelled.")
+    print("\n    Cancelled.")
+    ard.close()
     exit(0)
 
 # =============================================================================
 # MEASUREMENT LOOP
 # =============================================================================
 
+alignment_offset = current_servo_angle
+
 print("\n" + "=" * 60)
-print(" Starting Calibration Phase")
+print(" Starting Measurement")
 print("=" * 60)
-print(f"    Start Offset: {alignment_offset}°")
-print(f"    Total Steps:  {TOTAL_STEPS}")
-print(f"    Increment:    {STEP_INCREMENT}°")
-
-# We are already at 'alignment_offset'. 
-# We will scan 180 degrees relative to this? 
-# OR just scan from here until 180?
-# Typically user wants to START at 0° DoA (Physical X) and go to 180° DoA.
-
-# Let's assume we start here and do TOTAL_STEPS.
-# But we must ensure we don't hit physical limit (180).
-# If alignment_offset is large, we might hit 180 servo limit soon.
+print(f"    Start Position: {alignment_offset}°")
+print(f"    Steps: {TOTAL_STEPS} x {STEP_INCREMENT}°")
+print(f"    Algorithms: {', '.join([a[0] for a in ALGORITHMS])}")
 
 remaining_space = 180 - alignment_offset
-max_steps_possible = int(remaining_space / STEP_INCREMENT)
+max_steps = int(remaining_space / STEP_INCREMENT)
+if max_steps < TOTAL_STEPS:
+    print(f"    WARNING: Limited to {max_steps} steps (servo limit)")
+    TOTAL_STEPS = max_steps
 
-if max_steps_possible < TOTAL_STEPS:
-    print(f"    WARNING: Servo limit (180°) reached in {max_steps_possible} steps.")
-    print(f"    Reducing run to {max_steps_possible} steps.")
-    TOTAL_STEPS = max_steps_possible
+# Results storage: {algorithm_name: [(true, est, err), ...]}
+results = {name: [] for name, _, _ in ALGORITHMS}
 
-current_angle = 0 # Relative measurement angle (Ground Truth 0)
-results = []    
+# First, capture reference angles for absolute algorithms (SRP-PHAT, MUSIC)
+# These algorithms report absolute direction, so we need to know what angle
+# corresponds to "0° true angle" in their coordinate system
+print("\n    Capturing reference angles...", end=" ", flush=True)
+ref_recording = sd.rec(
+    int(RECORDING_DURATION * SAMPLE_RATE),
+    samplerate=SAMPLE_RATE,
+    channels=6,
+    device=respeaker_id,
+    dtype='int16'
+)
+time.sleep(0.1)
+send_play(ard)
+sd.wait()
+ref_audio = ref_recording[:, 1:5].astype(np.float64)
+
+# Get reference angles for each algorithm
+reference_angles = {}
+for name, algo_func, _ in ALGORITHMS:
+    try:
+        reference_angles[name] = algo_func(ref_audio, SAMPLE_RATE)
+    except:
+        reference_angles[name] = 0
+print("OK")
+print(f"    Reference angles: " + ", ".join([f"{n[:3]}={v:.0f}°" for n, v in reference_angles.items()]))
 
 try:
     for step in range(TOTAL_STEPS):
-        print(f"\n--- Step {step + 1}/{TOTAL_STEPS} (Rel: {current_angle}°, Phys: {current_servo_angle}°) ---")
+        true_angle = step * STEP_INCREMENT
+        servo_pos = alignment_offset + true_angle
         
-        # 1. Move Motor
+        print(f"\n--- Step {step + 1}/{TOTAL_STEPS} | True: {true_angle}° | Servo: {servo_pos}° ---")
+        
+        # Move
         print("    Moving...", end=" ", flush=True)
-        ard.write(b'M')
+        send_goto(ard, servo_pos)
+        current_servo_angle = servo_pos
+        print("OK")
         
-        # Wait for "READY"
-        while True:
-            line = ard.readline().decode().strip()
-            if line == "READY":
-                print("OK")
-                break
-        
-        # 2. Record & Trigger Sound
-        print(f"    Recording...", end=" ", flush=True)
-        
-        # Start recording (non-blocking)
+        # Record
+        print("    Recording...", end=" ", flush=True)
         recording = sd.rec(
             int(RECORDING_DURATION * SAMPLE_RATE),
             samplerate=SAMPLE_RATE,
@@ -225,38 +248,39 @@ try:
             device=respeaker_id,
             dtype='int16'
         )
-        
-        # Trigger sound shortly after recording starts
         time.sleep(0.1)
-        ard.write(b'P')
-        
-        # Wait for recording
+        send_play(ard)
         sd.wait()
         print("OK")
         
-        # 3. Process Data
-        print("    Calculating...", end=" ", flush=True)
-        
-        # Extract mic channels (1-4)
-        # ReSpeaker 6-ch mode: ch0=processed, ch1-4=raw mics, ch5=playback
+        # Extract mic channels
         raw_audio = recording[:, 1:5].astype(np.float64)
         
-        est_angle = get_gcc_phat_angle(raw_audio, SAMPLE_RATE)
-        
-        # Calculate error (shortest path on circle)
-        error = abs(est_angle - current_angle)
-        if error > 180:
-            error = 360 - error
-            
-        print("OK")
-        print(f"    TRUE: {current_angle:5.1f}° | EST: {est_angle:5.1f}° | ERR: {error:5.1f}°")
-        
-        results.append((current_angle, est_angle, error))
-        
-        # Prepare for next step
-        current_angle += STEP_INCREMENT
-        if current_angle >= 360:
-            current_angle -= 360
+        # Calculate with each algorithm
+        print("    Calculating: ", end="", flush=True)
+        for name, algo_func, _ in ALGORITHMS:
+            try:
+                raw_est = algo_func(raw_audio, SAMPLE_RATE)
+                
+                # For absolute algorithms (SRP-PHAT, MUSIC), convert to relative
+                # by subtracting the reference angle
+                ref = reference_angles[name]
+                est = (raw_est - ref + 360) % 360
+                
+                # Handle wraparound for display (keep in 0-180 range for comparison)
+                if est > 180:
+                    est = est - 360  # Convert to negative for display
+                
+                err = abs(est - true_angle)
+                if err > 180:
+                    err = 360 - err
+                    
+                results[name].append((true_angle, est, err))
+                print(f"{name[:3]}:{est:5.1f}° ", end="")
+            except Exception as e:
+                results[name].append((true_angle, None, None))
+                print(f"{name[:3]}:ERR ", end="")
+        print()
 
 except KeyboardInterrupt:
     print("\n\nStopped by user.")
@@ -265,46 +289,99 @@ finally:
     ard.close()
 
 # =============================================================================
-# RESULTS
+# RESULTS & PLOTTING
 # =============================================================================
 
-if results:
-    true_angles = [r[0] for r in results]
-    est_angles = [r[1] for r in results]
-    errors = [r[2] for r in results]
-    
-    mean_err = np.mean(errors)
-    max_err = np.max(errors)
-    
-    print("\n" + "=" * 60)
-    print(f" Results Summary")
-    print("=" * 60)
-    print(f"    Mean Error: {mean_err:.1f}°")
-    print(f"    Max Error:  {max_err:.1f}°")
-    
-    # Simple plot
-    plt.figure(figsize=(10, 6))
-    
-    # Upper plot: Tracking
-    plt.subplot(2, 1, 1)
-    plt.plot(true_angles, est_angles, 'bo-', label='Estimated')
-    plt.plot(true_angles, true_angles, 'r--', label='Reference')
-    plt.title('DoA Tracking Accuracy')
-    plt.ylabel('Angle (°)')
-    plt.legend()
-    plt.grid(True)
-    
-    # Lower plot: Error
-    plt.subplot(2, 1, 2)
-    plt.bar(true_angles, errors, width=STEP_INCREMENT*0.8)
-    plt.axhline(mean_err, color='r', linestyle='--', label=f'Mean: {mean_err:.1f}°')
-    plt.title('Abs. Error')
-    plt.xlabel('Physical Angle (°)')
-    plt.ylabel('Error (°)')
-    plt.legend()
-    plt.grid(True)
-    
-    plt.tight_layout()
-    plt.show()
+print("\n" + "=" * 60)
+print(" Results Summary")
+print("=" * 60)
+
+# Calculate stats for each algorithm
+for name, _, _ in ALGORITHMS:
+    valid = [(t, e, err) for t, e, err in results[name] if e is not None]
+    if valid:
+        errors = [err for _, _, err in valid]
+        print(f"    {name:12s}: Mean={np.mean(errors):5.1f}°  Max={np.max(errors):5.1f}°  Std={np.std(errors):4.1f}°")
+    else:
+        print(f"    {name:12s}: No valid data")
+
+# Create comparison plot
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+fig.suptitle("DoA Algorithm Comparison", fontsize=16, fontweight='bold')
+
+# Plot 1: Tracking accuracy for all algorithms
+ax1 = axes[0, 0]
+for name, _, color in ALGORITHMS:
+    valid = [(t, e) for t, e, _ in results[name] if e is not None]
+    if valid:
+        true_vals = [t for t, _ in valid]
+        est_vals = [e for _, e in valid]
+        ax1.plot(true_vals, est_vals, 'o-', color=color, label=name, markersize=4)
+ax1.plot([0, 180], [0, 180], 'k--', linewidth=2, label='Perfect', alpha=0.5)
+ax1.set_xlabel('True Angle (°)')
+ax1.set_ylabel('Estimated Angle (°)')
+ax1.set_title('Tracking Accuracy')
+ax1.legend(loc='upper left')
+ax1.grid(True, alpha=0.3)
+
+# Plot 2: Error comparison
+ax2 = axes[0, 1]
+bar_width = 0.8 / len(ALGORITHMS)
+for i, (name, _, color) in enumerate(ALGORITHMS):
+    valid = [(t, err) for t, _, err in results[name] if err is not None]
+    if valid:
+        x = np.array([t for t, _ in valid]) + i * bar_width
+        y = [err for _, err in valid]
+        ax2.bar(x, y, width=bar_width, color=color, label=name, alpha=0.7)
+ax2.set_xlabel('True Angle (°)')
+ax2.set_ylabel('Absolute Error (°)')
+ax2.set_title('Error at Each Position')
+ax2.legend()
+ax2.grid(True, alpha=0.3, axis='y')
+
+# Plot 3: Box plot of errors
+ax3 = axes[1, 0]
+error_data = []
+labels = []
+colors = []
+for name, _, color in ALGORITHMS:
+    valid = [err for _, _, err in results[name] if err is not None]
+    if valid:
+        error_data.append(valid)
+        labels.append(name)
+        colors.append(color)
+if error_data:
+    bp = ax3.boxplot(error_data, labels=labels, patch_artist=True)
+    for patch, color in zip(bp['boxes'], colors):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.7)
+ax3.set_ylabel('Error (°)')
+ax3.set_title('Error Distribution')
+ax3.grid(True, alpha=0.3, axis='y')
+
+# Plot 4: Mean error bar chart
+ax4 = axes[1, 1]
+means = []
+names = []
+cols = []
+for name, _, color in ALGORITHMS:
+    valid = [err for _, _, err in results[name] if err is not None]
+    if valid:
+        means.append(np.mean(valid))
+        names.append(name)
+        cols.append(color)
+if means:
+    bars = ax4.bar(names, means, color=cols, alpha=0.7)
+    for bar, val in zip(bars, means):
+        ax4.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.2, 
+                f'{val:.1f}°', ha='center', fontsize=10)
+ax4.set_ylabel('Mean Error (°)')
+ax4.set_title('Algorithm Comparison')
+ax4.grid(True, alpha=0.3, axis='y')
+
+plt.tight_layout()
+plt.savefig('doa_comparison_results.png', dpi=150)
+print(f"\n    Plot saved: doa_comparison_results.png")
+plt.show()
 
 print("\nDone.")

@@ -143,3 +143,89 @@ def get_srp_phat_angle(mics, fs=16000, resolution=5):
         powers[idx] = np.sum(np.abs(steered_sum)**2)
     
     return angles[np.argmax(powers)]
+
+def basic_cc_delay(sig1, sig2, fs, max_tau):
+    """Basic cross-correlation without PHAT weighting."""
+    n = len(sig1) + len(sig2)
+    SIG1 = np.fft.rfft(sig1, n=n)
+    SIG2 = np.fft.rfft(sig2, n=n)
+    
+    R = SIG1 * np.conj(SIG2)
+    cc = np.fft.irfft(R, n=n)
+    
+    max_shift = int(max_tau * fs)
+    cc = np.concatenate([cc[-max_shift:], cc[:max_shift+1]])
+    
+    peak_idx = np.argmax(np.abs(cc))
+    
+    # Parabolic interpolation
+    if 1 <= peak_idx <= len(cc) - 2:
+        y0, y1, y2 = np.abs(cc[peak_idx-1:peak_idx+2])
+        if y0 != 2*y1 - y2:
+            delta = 0.5 * (y0 - y2) / (y0 - 2*y1 + y2)
+            peak_idx = peak_idx + delta
+    
+    tau_samples = peak_idx - max_shift
+    return tau_samples / fs
+
+def get_basic_cc_angle(mics, fs=16000):
+    """DoA using basic cross-correlation."""
+    max_tau = 2 * MIC_SPACING / SPEED_OF_SOUND
+    
+    tau_02 = basic_cc_delay(mics[:, 0], mics[:, 2], fs, max_tau)
+    tau_13 = basic_cc_delay(mics[:, 1], mics[:, 3], fs, max_tau)
+    
+    return tdoa_to_angle(tau_02, tau_13)
+
+def get_music_angle(mics, fs=16000, n_sources=1):
+    """
+    MUSIC: Multiple Signal Classification.
+    High resolution subspace method.
+    """
+    from scipy.linalg import eigh
+    
+    n_mics = mics.shape[1]
+    n_samples = mics.shape[0]
+    
+    # Build covariance matrix
+    R = np.zeros((n_mics, n_mics), dtype=complex)
+    
+    n_fft = n_samples
+    freqs = np.fft.rfftfreq(n_fft, 1/fs)
+    MICs = np.array([np.fft.rfft(mics[:, i]) for i in range(n_mics)])
+    
+    # Use voice frequency range
+    freq_mask = (freqs > 200) & (freqs < 4000)
+    
+    for f_idx in np.where(freq_mask)[0]:
+        x = MICs[:, f_idx].reshape(-1, 1)
+        R += x @ x.conj().T
+    
+    R /= np.sum(freq_mask) + 1e-10
+    
+    # Eigendecomposition
+    eigenvalues, eigenvectors = eigh(R)
+    
+    # Noise subspace
+    noise_subspace = eigenvectors[:, :n_mics - n_sources]
+    
+    # Scan angles
+    angles = np.arange(0, 360, 5)
+    spectrum = np.zeros(len(angles))
+    
+    for idx, angle in enumerate(angles):
+        theta = np.radians(angle)
+        d = np.array([np.sin(theta), np.cos(theta)])
+        
+        # Steering vector
+        delays = -np.dot(MIC_POSITIONS, d) / SPEED_OF_SOUND
+        center_freq = 1500
+        a = np.exp(-2j * np.pi * center_freq * delays)
+        a = a.reshape(-1, 1)
+        
+        # MUSIC spectrum
+        denom = np.abs(a.conj().T @ noise_subspace @ noise_subspace.conj().T @ a)
+        spectrum[idx] = 1 / (denom[0, 0] + 1e-10)
+    
+    return angles[np.argmax(spectrum)]
+
