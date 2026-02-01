@@ -99,19 +99,19 @@ if CNN_AVAILABLE:
     # Load CNN model
     CNN_MODEL = None
     CNN_DEVICE = torch.device('cpu')
-    model_path = Path(__file__).parent / 'doa_cnn_model.pth'
+    model_path = Path(__file__).parent / 'doa_cnn_finetuned.pth'
     
     if model_path.exists():
         try:
             CNN_MODEL = DoACNN()
             CNN_MODEL.load_state_dict(torch.load(model_path, map_location=CNN_DEVICE))
             CNN_MODEL.eval()
-            print(f"    CNN model loaded from {model_path}")
+            print(f"    [INFO] CNN model loaded from {model_path}")
         except Exception as e:
-            print(f"    WARNING: Could not load CNN model: {e}")
+            print(f"    [ERROR] Could not load CNN model: {e}")
             CNN_MODEL = None
     else:
-        print(f"    WARNING: CNN model not found at {model_path}")
+        print(f"    [WARNING] CNN model not found at {model_path}")
 
     def get_cnn_angle(mics, fs=16000):
         """CNN-based DoA estimation."""
@@ -137,8 +137,14 @@ ALGORITHMS = [
     ("MUSIC", get_music_angle, "#ffe66d"),
 ]
 
-if CNN_AVAILABLE and 'CNN_MODEL' in dir() and CNN_MODEL is not None:
-    ALGORITHMS.append(("CNN", get_cnn_angle, "#9b59b6"))
+if CNN_AVAILABLE:
+    if 'CNN_MODEL' in dir() and CNN_MODEL is not None:
+        ALGORITHMS.append(("CNN", get_cnn_angle, "#9b59b6"))
+        print("    [INFO] CNN Algorithm Registered Successfully")
+    else:
+        print("    [WARNING] CNN Algorithm NOT registered (Model missing or failed to load)")
+else:
+    print("    [WARNING] CNN Algorithm SKIPPED (PyTorch not available)")
 
 # =============================================================================
 # HELPER FUNCTIONS
