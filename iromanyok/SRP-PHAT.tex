@@ -44,7 +44,7 @@ In theory we could do this but when we're working with computers we should  appl
 
 It is a cross correlation that gives us back how the two signals match as a function of $\tau$, then we can select the $\tau$ that maximizes this function and say that's the time difference of arrival.
 
-\section*{3. Frequency Domain}
+\section*{3. Basic CC, GCC-PHAT}
 
 But we can do it in a way more sophisticated way by looking at these events in frequency domain.
 
@@ -52,7 +52,7 @@ But before we do that it's worth noticing that the computation of cross-correlat
 
 So:
 \begin{equation}
-    R_{ij} = x_i(t) \star x_j(-t)
+    R_{ij}(\tau) = x_i(t) \star x_j(-t)
 \end{equation}
 (The minus sign becomes complex conjugation).
 
@@ -60,9 +60,11 @@ So:
     G_{ij}(\omega) = X_i(\omega) X_j^*(\omega)
 \end{equation}
 
-Before we transform back to get the TDOA we whiten the signals by removing the magnitude. This makes the method more precise.
+This is a key part of all the following algorithm. From there the methods differ. In basic CC we just transform $ G_{ij}(\omega) $ back to time domain. And select the $\tau$ that maximize $R_{ij}(\tau)$.
 
-So we'll transform $\frac{G_{ij}}{|G_{ij}|}$ back to time domain.
+In GCC-PHAT before we transform the signal back to get the TDOA we whiten the signals by removing the magnitude. This makes the method more precise.
+
+So, we'll end up with $\frac{G_{ij}}{|G_{ij}|}$ and then we transform it back to time domain.
 
 \begin{equation}
     R_{ij}^{PHAT}(\tau) = \frac{1}{2\pi} \int_{-\infty}^{\infty} \frac{X_i(\omega) X_j^*(\omega)}{|X_i(\omega) X_j^*(\omega)|} e^{i\omega\tau} \, d\omega
@@ -71,6 +73,8 @@ So we'll transform $\frac{G_{ij}}{|G_{ij}|}$ back to time domain.
 So by doing this we'll get a pulse at the estimated TDOA.
 
 \vspace{1em}
-\noindent \textbf{So with GCC-PHAT we can get the time delays for every pair of mics.}
+\noindent \textbf{So with basic CC and GCC-PHAT we can get the time delays for every pair of mics.}
+
+After we got the time delays we can use basic trigonometry to get the estimated direction. We assume that the sound source is far away from the mics. Than we estimate that the wavefront of the sound, near the mics is a straight line. By doing this we can get the DoA by doing some basic trigonometry. However, using only one pair of mics won't give us a full solution. In space time delays determine a cone of possible directions where the sound can come from. If we have the results from two different mic pairs than it determines two cones. It's relatively easy to prove that the intersection of these cones determine two straight lines in space. One above the mic array and one under. These will be the lines corresponding to the direction of arrival. (Actually the TDOA defines a hyperboloid but we can estimate it with cones assuming far-field scenario.)
 
 \end{document}
