@@ -77,4 +77,71 @@ So by doing this we'll get a pulse at the estimated TDOA.
 
 After we got the time delays we can use basic trigonometry to get the estimated direction. We assume that the sound source is far away from the mics. Than we estimate that the wavefront of the sound, near the mics is a straight line. By doing this we can get the DoA by doing some basic trigonometry. However, using only one pair of mics won't give us a full solution. In space time delays determine a cone of possible directions where the sound can come from. If we have the results from two different mic pairs than it determines two cones. It's relatively easy to prove that the intersection of these cones determine two straight lines in space. One above the mic array and one under. These will be the lines corresponding to the direction of arrival. (Actually the TDOA defines a hyperboloid but we can estimate it with cones assuming far-field scenario.)
 
+
+\section*{4. SRP - PHAT}
+
+SRP consists of two parts. First, Steered Response Power. Second, Phase transform. We demonstrated the Phase transform above.
+
+Steered Response Power asks the question: What would we sense if sound were coming from a point in 3D space $q=(x,y,z)$?
+If we have this imaginary sound source at $q$, then we can compute the time required to reach the i-th mic let's name this $\Delta_i(q)$. We add up the modified signals to model the interference produced by the time delays.:
+
+\[
+y(t,q) = \sum_{i=0}^{M-1} x_i(t - \Delta_i(q))
+\]
+\textit{(M is the num of mics)}
+
+(We can reverse this and think about this process as; what happens if we sum up the signals coming from the mics with the delays at $q$, and observe what type of interferences do we get.)
+
+We want to find the $q$ that maximizes $y(t,q)$.
+We can't really work with $y(t,q)$. Solving this issue we could average $y(t,q)$ over a time period, but frequent jumps from positive to negative values appear in every sound recording, so the signal would average out. Solving this we square the signal before the time average:
+
+\[
+P(q) = \frac{1}{T_2 - T_1} \int_{T_1}^{T_2} y^2(t,q) dt
+\]
+
+or using discrete case:
+
+\[
+P(q) = \frac{1}{N} \sum_{n=0}^{N-1} y^2(n, q)
+\]
+
+Let's denote it: $P(q) = E[y^2(t,q)]$
+
+expanding:
+\[
+P(q) = E\left[ \left( \sum_{i=0}^{M-1} x_i(t - \Delta_i(q)) \right) \left( \sum_{j=0}^{M-1} x_j(t - \Delta_j(q)) \right) \right]
+\]
+
+\[
+P(q) = \sum_{i,j=0}^{M-1} E\left[ x_i(t - \Delta_i(q)) x_j(t - \Delta_j(q)) \right]
+\]
+
+Let's define:
+\[
+R_{ij}(\tau) = E[x_i(t) x_j(t - \tau)]
+\]
+
+Where:
+\[
+\tau = \Delta_j(q) - \Delta_i(q)
+\]
+
+\[
+P(q) = \sum_{i,j=0}^{M-1} R_{ij}(\tau)
+\]
+
+So we arrived back to cross-correlation.
+Now we can apply PHAT:
+
+\[
+P(q) = \sum_{i,j=0}^{M-1} R_{ij}^{\text{PHAT}}(\tau)
+\]
+
+We compute unnecessary things (twice the correlations when $i \neq j$, and cross-correlation with the signal itself too, when $i=j$), let's simplify it because we only care about the maximum of $P(q)$
+
+\[
+P'(q) = \sum_{i=0}^{M-1} \sum_{j=i+1}^{M-1} R_{ij}^{\text{PHAT}}(\tau)
+\]
+
+So, we calculate $\tau$ from $q$ and then from $q$ we calculate $P'(q)$. We do that for many points in space ($q$) and the point that gives the maximum value for $P'(q)$ will be selected as the estimated sound source position. As you can see this algorithm is computationally heavy, but it estimates the DoA more accurately than many of it's competitors. And it can handle echos and noise better.
 \end{document}
