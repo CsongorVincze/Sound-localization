@@ -46,7 +46,7 @@ It is a cross correlation that gives us back how the two signals match as a func
 
 \section*{3. Basic CC, GCC-PHAT}
 
-But we can do it in a way more sophisticated way by looking at these events in frequency domain.
+But we can do it in more sophisticated way by looking at these events in frequency domain.
 
 But before we do that it's worth noticing that the computation of cross-correlation and convolution is really similar. And convolution in time domain becomes multiplication in frequency domain.
 
@@ -144,4 +144,10 @@ P'(q) = \sum_{i=0}^{M-1} \sum_{j=i+1}^{M-1} R_{ij}^{\text{PHAT}}(\tau)
 \]
 
 So, we calculate $\tau$ from $q$ and then from $q$ we calculate $P'(q)$. We do that for many points in space ($q$) and the point that gives the maximum value for $P'(q)$ will be selected as the estimated sound source position. As you can see this algorithm is computationally heavy, but it estimates the DoA more accurately than many of it's competitors. And it can handle echos and noise better.
+
+\section{Neuromorphic hardware}
+
+
+
+
 \end{document}
