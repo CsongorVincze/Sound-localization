@@ -9,17 +9,10 @@ import time
 import sounddevice as sd
 import numpy as np
 import matplotlib.pyplot as plt
-from my_algos import get_gcc_phat_angle, get_srp_phat_angle, get_basic_cc_angle, get_music_angle
+from my_algos import get_gcc_phat_angle, get_srp_phat_angle, get_basic_cc_angle
 from pathlib import Path
 
-# Try to import PyTorch for CNN
-CNN_AVAILABLE = False
-try:
-    import torch
-    import torch.nn as nn
-    CNN_AVAILABLE = True
-except ImportError:
-    print("WARNING: PyTorch not available. CNN algorithm will be skipped.")
+
 
 # =============================================================================
 # CONFIGURATION
@@ -32,119 +25,15 @@ STEP_INCREMENT = 5     # degrees
 TOTAL_STEPS = 36       # 180 degrees total
 DEFAULT_START_ANGLE = 45  # Default servo home position
 
-# CNN Configuration
-MIC_SPACING = 0.0465
-SPEED_OF_SOUND = 343.0
-MAX_TAU = 2 * MIC_SPACING / SPEED_OF_SOUND
-CC_LENGTH = 64
 
-# =============================================================================
-# CNN MODEL & FEATURE EXTRACTION
-# =============================================================================
-
-if CNN_AVAILABLE:
-    class DoACNN(nn.Module):
-        """CNN for DoA estimation from GCC-PHAT features."""
-        def __init__(self):
-            super(DoACNN, self).__init__()
-            self.conv1 = nn.Conv1d(6, 32, kernel_size=5, padding=2)
-            self.bn1 = nn.BatchNorm1d(32)
-            self.conv2 = nn.Conv1d(32, 64, kernel_size=5, padding=2)
-            self.bn2 = nn.BatchNorm1d(64)
-            self.conv3 = nn.Conv1d(64, 128, kernel_size=3, padding=1)
-            self.bn3 = nn.BatchNorm1d(128)
-            self.pool = nn.MaxPool1d(2)
-            self.dropout = nn.Dropout(0.3)
-            self.fc1 = nn.Linear(128 * 8, 256)
-            self.fc2 = nn.Linear(256, 64)
-            self.fc3 = nn.Linear(64, 2)
-            self.relu = nn.ReLU()
-            
-        def forward(self, x):
-            x = self.pool(self.relu(self.bn1(self.conv1(x))))
-            x = self.pool(self.relu(self.bn2(self.conv2(x))))
-            x = self.pool(self.relu(self.bn3(self.conv3(x))))
-            x = x.view(x.size(0), -1)
-            x = self.dropout(self.relu(self.fc1(x)))
-            x = self.dropout(self.relu(self.fc2(x)))
-            x = self.fc3(x)
-            x = x / (torch.norm(x, dim=1, keepdim=True) + 1e-8)
-            return x
-
-    def compute_gcc_phat(sig1, sig2, fs, n_output=64):
-        """Compute GCC-PHAT correlation vector."""
-        n = len(sig1) + len(sig2)
-        SIG1 = np.fft.rfft(sig1, n=n)
-        SIG2 = np.fft.rfft(sig2, n=n)
-        R = SIG1 * np.conj(SIG2)
-        mag = np.abs(R)
-        R = R / (mag + 1e-10)
-        cc = np.fft.irfft(R, n=n)
-        max_shift = int(MAX_TAU * fs) + n_output // 2
-        cc = np.concatenate([cc[-max_shift:], cc[:max_shift+1]])
-        center = len(cc) // 2
-        start = center - n_output // 2
-        end = start + n_output
-        return cc[start:end].astype(np.float32)
-
-    def extract_gcc_features(audio, fs=16000):
-        """Extract GCC-PHAT features for all mic pairs."""
-        pairs = [(0,1), (0,2), (0,3), (1,2), (1,3), (2,3)]
-        features = []
-        for i, j in pairs:
-            cc = compute_gcc_phat(audio[:, i], audio[:, j], fs, CC_LENGTH)
-            features.append(cc)
-        return np.array(features, dtype=np.float32)
-
-    # Load CNN model
-    CNN_MODEL = None
-    CNN_DEVICE = torch.device('cpu')
-    model_path = Path(__file__).parent / 'doa_cnn_finetuned.pth'
-    
-    if model_path.exists():
-        try:
-            CNN_MODEL = DoACNN()
-            CNN_MODEL.load_state_dict(torch.load(model_path, map_location=CNN_DEVICE))
-            CNN_MODEL.eval()
-            print(f"    [INFO] CNN model loaded from {model_path}")
-        except Exception as e:
-            print(f"    [ERROR] Could not load CNN model: {e}")
-            CNN_MODEL = None
-    else:
-        print(f"    [WARNING] CNN model not found at {model_path}")
-
-    def get_cnn_angle(mics, fs=16000):
-        """CNN-based DoA estimation."""
-        if CNN_MODEL is None:
-            return 0.0
-        
-        features = extract_gcc_features(mics, fs)
-        features_tensor = torch.from_numpy(features).unsqueeze(0).float()
-        
-        with torch.no_grad():
-            output = CNN_MODEL(features_tensor)
-        
-        sin_val = output[0, 0].item()
-        cos_val = output[0, 1].item()
-        angle = np.degrees(np.arctan2(sin_val, cos_val))
-        return (angle + 360) % 360
 
 # Build algorithm list
 ALGORITHMS = [
     ("GCC-PHAT", get_gcc_phat_angle, "#00d2ff"),
     ("SRP-PHAT", get_srp_phat_angle, "#4ecdc4"),
     ("Basic CC", get_basic_cc_angle, "#ff6b6b"),
-    ("MUSIC", get_music_angle, "#ffe66d"),
 ]
 
-if CNN_AVAILABLE:
-    if 'CNN_MODEL' in dir() and CNN_MODEL is not None:
-        ALGORITHMS.append(("CNN", get_cnn_angle, "#9b59b6"))
-        print("    [INFO] CNN Algorithm Registered Successfully")
-    else:
-        print("    [WARNING] CNN Algorithm NOT registered (Model missing or failed to load)")
-else:
-    print("    [WARNING] CNN Algorithm SKIPPED (PyTorch not available)")
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -161,11 +50,6 @@ def send_goto(ser, angle):
             return True
         if line == "ERROR":
             return False
-
-def send_play(ser):
-    """Send PLAY command to trigger sound."""
-    ser.write(b'P')
-    # Don't wait - we're recording
 
 def send_reset(ser):
     """Send RESET command to return to 0°."""
@@ -277,8 +161,6 @@ try:
                 device=respeaker_id,
                 dtype='int16'
             )
-            time.sleep(0.1)
-            send_play(ard)
             sd.wait()
             
             raw_audio = recording[:, 1:5].astype(np.float64)
@@ -327,8 +209,6 @@ ref_recording = sd.rec(
     device=respeaker_id,
     dtype='int16'
 )
-time.sleep(0.1)
-send_play(ard)
 sd.wait()
 ref_audio = ref_recording[:, 1:5].astype(np.float64)
 
@@ -364,8 +244,6 @@ try:
             device=respeaker_id,
             dtype='int16'
         )
-        time.sleep(0.1)
-        send_play(ard)
         sd.wait()
         print("OK")
         

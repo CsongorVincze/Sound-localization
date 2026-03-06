@@ -28,11 +28,17 @@ def gcc_phat_delay(sig1, sig2, fs, max_tau):
     SIG1 = np.fft.rfft(sig1, n=n)
     SIG2 = np.fft.rfft(sig2, n=n)
     
+    # Apply human voice bandpass filter (300Hz - 3400Hz)
+    freqs = np.fft.rfftfreq(n, d=1/fs)
+    voice_mask = (freqs >= 300) & (freqs <= 3400)
+    SIG1[~voice_mask] = 0
+    SIG2[~voice_mask] = 0
+    
     # Cross-spectrum with modified PHAT weighting
     R = SIG1 * np.conj(SIG2)
     mag = np.abs(R)
-    beta = 0.1 * np.max(mag)  # Regularization for narrowband signals
-    R = R / (mag + beta)
+    beta = 0.2 * np.max(mag)  # Increased regularization for speech harmonics
+    R = R / (mag + beta + 1e-10)
     
     cc = np.fft.irfft(R, n=n)
     
@@ -124,6 +130,11 @@ def get_srp_phat_angle(mics, fs=16000, resolution=5):
     freqs = np.fft.rfftfreq(n_fft, 1/fs)
     MICs = np.array([np.fft.rfft(mics[:, i], n=n_fft) for i in range(n_mics)])
     
+    # Apply human voice bandpass filter (300Hz - 3400Hz)
+    voice_mask = (freqs >= 300) & (freqs <= 3400)
+    for m in range(n_mics):
+        MICs[m, ~voice_mask] = 0
+        
     for idx, angle in enumerate(angles):
         theta = np.radians(angle)
         # Direction vector: x=sin(θ), y=cos(θ)
@@ -137,7 +148,7 @@ def get_srp_phat_angle(mics, fs=16000, resolution=5):
         for m in range(n_mics):
             phase_shift = np.exp(2j * np.pi * freqs * delays[m])
             mag = np.abs(MICs[m])
-            weighted = MICs[m] / (mag + 0.1 * np.max(mag))  # Regularized PHAT
+            weighted = MICs[m] / (mag + 0.2 * np.max(mag) + 1e-10)  # Regularized PHAT for voice
             steered_sum += weighted * phase_shift
         
         powers[idx] = np.sum(np.abs(steered_sum)**2)
@@ -149,6 +160,12 @@ def basic_cc_delay(sig1, sig2, fs, max_tau):
     n = len(sig1) + len(sig2)
     SIG1 = np.fft.rfft(sig1, n=n)
     SIG2 = np.fft.rfft(sig2, n=n)
+    
+    # Apply human voice bandpass filter (300Hz - 3400Hz)
+    freqs = np.fft.rfftfreq(n, d=1/fs)
+    voice_mask = (freqs >= 300) & (freqs <= 3400)
+    SIG1[~voice_mask] = 0
+    SIG2[~voice_mask] = 0
     
     R = SIG1 * np.conj(SIG2)
     cc = np.fft.irfft(R, n=n)
@@ -187,56 +204,4 @@ def get_basic_cc_angle(mics, fs=16000):
 
 
 
-
-def get_music_angle(mics, fs=16000, n_sources=1):
-    """
-    MUSIC: Multiple Signal Classification.
-    High resolution subspace method.
-    """
-    from scipy.linalg import eigh
-    
-    n_mics = mics.shape[1]
-    n_samples = mics.shape[0]
-    
-    # Build covariance matrix
-    R = np.zeros((n_mics, n_mics), dtype=complex)
-    
-    n_fft = n_samples
-    freqs = np.fft.rfftfreq(n_fft, 1/fs)
-    MICs = np.array([np.fft.rfft(mics[:, i]) for i in range(n_mics)])
-    
-    # Use voice frequency range
-    freq_mask = (freqs > 200) & (freqs < 4000)
-    
-    for f_idx in np.where(freq_mask)[0]:
-        x = MICs[:, f_idx].reshape(-1, 1)
-        R += x @ x.conj().T
-    
-    R /= np.sum(freq_mask) + 1e-10
-    
-    # Eigendecomposition
-    eigenvalues, eigenvectors = eigh(R)
-    
-    # Noise subspace
-    noise_subspace = eigenvectors[:, :n_mics - n_sources]
-    
-    # Scan angles
-    angles = np.arange(0, 360, 5)
-    spectrum = np.zeros(len(angles))
-    
-    for idx, angle in enumerate(angles):
-        theta = np.radians(angle)
-        d = np.array([np.sin(theta), np.cos(theta)])
-        
-        # Steering vector
-        delays = -np.dot(MIC_POSITIONS, d) / SPEED_OF_SOUND
-        center_freq = 1500
-        a = np.exp(-2j * np.pi * center_freq * delays)
-        a = a.reshape(-1, 1)
-        
-        # MUSIC spectrum
-        denom = np.abs(a.conj().T @ noise_subspace @ noise_subspace.conj().T @ a)
-        spectrum[idx] = 1 / (denom[0, 0] + 1e-10)
-    
-    return angles[np.argmax(spectrum)]
 
