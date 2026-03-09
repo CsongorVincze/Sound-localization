@@ -1,7 +1,40 @@
-.venv/
+# Python standard ignores
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.pth
-*.pkl
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project specific
+shit/
+shit_2/
+Brain_2_sim/
+
+# Logs and databases
+*.log
+*.sqlite3
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# If you want to ignore plots or data, uncomment below:
+# *.png
+# *.csv
+# *.txt
+
+.python-version
