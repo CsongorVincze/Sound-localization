@@ -17,6 +17,51 @@ num_mics = 4
 target_angles = np.arange(0, 360, 15) * deg
 num_neurons = len(target_angles)
 
+def create_network(mics):
+    # tau_leaky is tunable via bias voltage (Joule heating). 
+    tau_leaky = 115 * us
+    v_thresh = 1.0 * volt 
+    v_reset = 0.0 * volt
+
+    mott_eqs = '''
+    dv/dt = -v / tau_leaky : volt (unless refractory)
+    '''
+
+    mott_neurons = NeuronGroup(num_neurons, mott_eqs, 
+                               threshold='v > v_thresh', 
+                               reset='v = v_reset', 
+                               refractory=2*ms, 
+                               method='exact',
+                               namespace={'tau_leaky': tau_leaky, 'v_thresh': v_thresh, 'v_reset': v_reset})
+
+    mott_neurons.v = 'rand() * 0.01 * volt'
+
+    # ==========================================
+    # 4. The Connection Matrix (Hardware Delays)
+    # ==========================================
+    synapses = Synapses(mics, mott_neurons, 
+                        'w : volt', 
+                        on_pre='v_post += w')
+    synapses.connect() # Full connectivity
+
+    synapses.w = 0.34 * volt 
+
+    for j in range(num_neurons):
+        theta_j = target_angles[j]
+        
+        t_acoustic = -(mic_x * cos(theta_j) + mic_y * sin(theta_j)) / c_sound
+        t_last = max(t_acoustic)
+        hardware_delays = t_last - t_acoustic
+        
+        for i in range(num_mics):
+            synapses.delay[i, j] = hardware_delays[i]
+
+    wta_syns = Synapses(mott_neurons, mott_neurons, on_pre='v_post -= 2.0*volt')
+    wta_syns.connect(condition='i != j')
+    wta_syns.delay = 0*us
+
+    return mott_neurons, synapses, wta_syns
+
 def run_simulation(true_angle_deg=67, plot_results=True):
     start_scope() # Reset Brian2 simulator
     defaultclock.dt = 1 * us # Smaller time step needed to resolve microsecond coincidences
@@ -36,65 +81,7 @@ def run_simulation(true_angle_deg=67, plot_results=True):
     indices = array([0, 1, 2, 3])
     mics = SpikeGeneratorGroup(num_mics, indices, t_arrival)
 
-    # ==========================================
-    # 3. Define the Mott LIF Neuron
-    # ==========================================
-    # tau_leaky is tunable via bias voltage (Joule heating). 
-    # We set it to 50 microseconds to require strict coincidence.
-    tau_leaky = 115 * us
-    #!I changed it from 50
-    v_thresh = 1.0 * volt 
-    v_reset = 0.0 * volt
-
-    # The differential equation: voltage decays over tau_leaky unless refractory
-    mott_eqs = '''
-    dv/dt = -v / tau_leaky : volt (unless refractory)
-    '''
-
-    # Create the reservoir/matrix of Mott neurons
-    # Refractory period set to 2ms to prevent multiple spikes per stimulus
-    mott_neurons = NeuronGroup(num_neurons, mott_eqs, 
-                               threshold='v > v_thresh', 
-                               reset='v = v_reset', 
-                               refractory=2*ms, 
-                               method='exact')
-
-    # Introduce a tiny bit of noise to break perfectly symmetric dead-ties (e.g. at exactly 7.5 degrees)
-    mott_neurons.v = 'rand() * 0.01 * volt'
-
-    # ==========================================
-    # 4. The Connection Matrix (Hardware Delays)
-    # ==========================================
-    # Connect all 4 mics to all N Mott neurons
-    synapses = Synapses(mics, mott_neurons, 
-                        'w : volt', 
-                        on_pre='v_post += w')
-    synapses.connect() # Full connectivity
-
-    # A single spike adds 0.26 V of excitation. 
-    # 4 perfectly timed spikes = 1.04 V (Crosses the 1.0 V threshold)
-    # 3 spikes = 0.78 V (Fails to fire)
-    synapses.w = 0.34 * volt 
-    #!I changed it from 0.26
-    # Populate the Delay Matrix
-    for j in range(num_neurons):
-        theta_j = target_angles[j]
-        
-        # What are the acoustic delays for a sound coming exactly from theta_j?
-        t_acoustic = -(mic_x * cos(theta_j) + mic_y * sin(theta_j)) / c_sound
-        
-        # The required hardware delay is the difference from the LAST arriving signal
-        t_last = max(t_acoustic)
-        hardware_delays = t_last - t_acoustic
-        
-        # Apply these specific physical delays to the synapses connecting to neuron j
-        for i in range(num_mics):
-            synapses.delay[i, j] = hardware_delays[i]
-
-    # Add Winner-Takes-All (WTA) Lateral Inhibition to enforce EXACTLY 1 spike
-    wta_syns = Synapses(mott_neurons, mott_neurons, on_pre='v_post -= 2.0*volt')
-    wta_syns.connect(condition='i != j')
-    wta_syns.delay = 0*us
+    mott_neurons, synapses, wta_syns = create_network(mics)
 
     # ==========================================
     # 5. Monitors & Run
