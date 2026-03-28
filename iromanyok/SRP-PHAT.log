@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (MiKTeX 24.1) (preloaded format=pdflatex 2025.12.10)  6 MAR 2026 15:38
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (MiKTeX 24.1) (preloaded format=pdflatex 2025.12.10)  28 MAR 2026 21:48
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -195,24 +195,35 @@ LaTeX Warning: No \author given.
 
 [1
 
-{C:/Users/Csongor/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map}] [2] [3] [4] (SRP-PHAT.aux)
+{C:/Users/Csongor/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map}] [2] [3] [4]
+<../Brian_2_sim/optimization_results.png, id=28, 1011.78pt x 433.62pt>
+File: ../Brian_2_sim/optimization_results.png Graphic file (type png)
+<use ../Brian_2_sim/optimization_results.png>
+Package pdftex.def Info: ../Brian_2_sim/optimization_results.png  used on input line 163.
+(pdftex.def)             Requested size: 345.0pt x 147.85892pt.
+<../Brian_2_sim/sweep_results.png, id=30, 1156.32pt x 433.62pt>
+File: ../Brian_2_sim/sweep_results.png Graphic file (type png)
+<use ../Brian_2_sim/sweep_results.png>
+Package pdftex.def Info: ../Brian_2_sim/sweep_results.png  used on input line 170.
+(pdftex.def)             Requested size: 345.0pt x 129.37242pt.
+ [5 <../Brian_2_sim/optimization_results.png> <../Brian_2_sim/sweep_results.png>] [6] (SRP-PHAT.aux)
  ***********
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2024-01-04>
  ***********
  ) 
 Here is how much of TeX's memory you used:
- 3152 strings out of 474486
- 47834 string characters out of 5753563
+ 3170 strings out of 474486
+ 48512 string characters out of 5753563
  1933542 words of memory out of 5000000
- 25399 multiletter control sequences out of 15000+600000
+ 25417 multiletter control sequences out of 15000+600000
  566306 words of font info for 68 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 61i,6n,69p,958b,220s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 61i,6n,69p,958b,239s stack positions out of 10000i,1000n,20000p,200000b,200000s
  <C:\Users\Csongor\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\tcrm1000.pk><C:/Program Files/MiKTeX/fonts/type1/public/amsfonts/cm/cmbx10.pfb><C:/Program Files/MiKTeX/fonts/type1/public/amsfonts/cm/cmbx12.pfb><C:/Program Files/MiKTeX/fonts/type1/public/amsfonts/cm/cmex10.pfb><C:/Program Files/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi10.pfb><C:/Program Files/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi5.pfb><C:/Program Files/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi7.pfb><C:/Program Files/MiKTeX/fonts/type1/public/amsfonts/cm/cmr10.pfb><C:/Program Files/MiKTeX/fonts/type1/public/amsfonts/cm/cmr17.pfb><C:/Program Files/MiKTeX/fonts/type1/public/amsfonts/cm/cmr5.pfb><C:/Program Files/MiKTeX/fonts/type1/public/amsfonts/cm/cmr7.pfb><C:/Program Files/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy10.pfb><C:/Program Files/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy7.pfb><C:/Program Files/MiKTeX/fonts/type1/public/amsfonts/cm/cmti10.pfb>
-Output written on SRP-PHAT.pdf (4 pages, 171715 bytes).
+Output written on SRP-PHAT.pdf (6 pages, 884221 bytes).
 PDF statistics:
- 85 PDF objects out of 1000 (max. 8388607)
+ 96 PDF objects out of 1000 (max. 8388607)
  0 named destinations out of 1000 (max. 500000)
- 1 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 11 words of extra memory for PDF output out of 10000 (max. 10000000)
 

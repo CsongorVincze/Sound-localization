@@ -107,6 +107,20 @@ OUTPUT SRP-PHAT.pdf
 INPUT C:\Users\Csongor\AppData\Local\MiKTeX\fonts\map\pdftex\pdftex.map
 INPUT C:\Program Files\MiKTeX\fonts\tfm\public\cm\cmbx10.tfm
 INPUT C:\Program Files\MiKTeX\fonts\tfm\public\cm\cmti10.tfm
+INPUT ..\Brian_2_sim\optimization_results.png
+INPUT ..\Brian_2_sim\optimization_results.png
+INPUT ..\Brian_2_sim\optimization_results.png
+INPUT ..\Brian_2_sim\optimization_results.png
+INPUT ..\Brian_2_sim\optimization_results.png
+INPUT ..\Brian_2_sim\optimization_results.png
+INPUT ..\Brian_2_sim\optimization_results.png
+INPUT ..\Brian_2_sim\sweep_results.png
+INPUT ..\Brian_2_sim\sweep_results.png
+INPUT ..\Brian_2_sim\sweep_results.png
+INPUT ..\Brian_2_sim\sweep_results.png
+INPUT ..\Brian_2_sim\sweep_results.png
+INPUT ..\Brian_2_sim\sweep_results.png
+INPUT ..\Brian_2_sim\sweep_results.png
 INPUT SRP-PHAT.aux
 INPUT C:\Users\Csongor\AppData\Local\MiKTeX\fonts\pk\ljfour\jknappen\ec\dpi600\tcrm1000.pk
 INPUT C:\Users\Csongor\AppData\Local\MiKTeX\fonts\pk\ljfour\jknappen\ec\dpi600\tcrm1000.pk

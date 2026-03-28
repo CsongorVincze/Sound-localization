@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 # Import the core network and necessary helper functions
 from kiindulo_kod import create_network, get_default_array_geometry, get_target_angles
 
-def run_simulation(true_angle_deg=67, plot_results=True):
+def run_simulation(true_angle_deg=67, plot_results=True, tau_leaky_val=115*us, v_thresh_val=1.0*volt):
     """
     Simulates a perfect acoustic event arriving from a specific angle, feeds it into 
     the LIF network, and plots the internal voltage traces of the neurons.
@@ -50,6 +50,8 @@ def run_simulation(true_angle_deg=67, plot_results=True):
                                                       mic_x=mic_x, 
                                                       mic_y=mic_y, 
                                                       target_angles=target_angles,
+                                                      tau_leaky=tau_leaky_val,
+                                                      v_thresh=v_thresh_val,
                                                       c_sound=c_sound)
 
     # Monitors to record the states of the simulation for plotting
@@ -117,4 +119,5 @@ def run_simulation(true_angle_deg=67, plot_results=True):
     return predicted_angle
 
 if __name__ == '__main__':
+    print("Running a single theoretical test wave at 67 degrees...")
     run_simulation(67, plot_results=True)

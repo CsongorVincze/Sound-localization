@@ -6,11 +6,10 @@ the full 360-degree range. It relies on the ideal acoustic simulation to measure
 hardware baseline performance and plots a comprehensive error report.
 """
 import numpy as np
-import matplotlib.subplots as plt_sub
 import matplotlib.pyplot as plt
 # We import run_simulation from our newly split ideal_sim file, instead of kiindulo_kod
 from ideal_sim import run_simulation
-from brian2 import prefs
+from brian2 import prefs, us, volt
 
 # Hide Brian2 compile warnings and reduce console spam during the sweep.
 # The code generation target is set to numpy for simpler, faster, bug-free execution.
@@ -34,9 +33,11 @@ def sweep_and_plot():
         if i % 10 == 0:
             print(f"Simulated {i}/{len(test_angles)} angles...")
             
-        # We explicitly set plot_results=False so we don't spam 180 individual result windows!
-        # This purely retrieves the algorithm's guess for the specific physical angle.
-        pred = run_simulation(true_angle_deg=ang, plot_results=False)
+        # We pass the computationally optimal parameters (58 us, 0.8 V) found via our grid search!
+        pred = run_simulation(true_angle_deg=ang, 
+                              plot_results=False,
+                              tau_leaky_val=58 * us,
+                              v_thresh_val=0.8 * volt)
         predicted_angles.append(pred)
 
     predicted_angles = np.array(predicted_angles)
