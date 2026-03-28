@@ -14,8 +14,8 @@ import matplotlib.pyplot as plt
 from scipy.signal import find_peaks, resample
 from brian2 import *
 
-# We import the algorithm settings directly from the single-responsibility module!
-from kiindulo_kod import create_network, target_angles, deg, c_sound, num_mics, num_neurons
+# We import our robust function definitions from the kiindulo module
+from kiindulo_kod import create_network, get_respeaker_array_geometry, get_target_angles
 
 def run_real_audio_sim(duration_sec=5.0):
     """
@@ -29,14 +29,25 @@ def run_real_audio_sim(duration_sec=5.0):
     # Standard recording sampling rate
     SAMPLE_RATE = 16000
     
+    # Load physical mapping arrays dynamically (Using real 4.65cm ReSpeaker!)
+    mic_x, mic_y, num_mics = get_respeaker_array_geometry()
+    target_angles, deg = get_target_angles(15)
+    num_neurons = len(target_angles)
+    c_sound = 343 * meter / second
+    
+    # Because the microphones are twice as close together physically (4.65cm vs 10cm), 
+    # the maximum delay between them is twice as short!
+    # Therefore, the neuron's "leak" window must decay roughly twice as fast to enforce
+    # the exact same strict Winner-Takes-All precision.
+    respeaker_tau_leaky = 55 * us 
+    
     # ==========================================
     # 1. Hardware Detection & Recording Setup
     # ==========================================
     respeaker_id = None
     devices = sd.query_devices()
     
-    # Find the specific ReSpeaker device. We need at least 4 hardware channels to
-    # extract relative delays between the 4 discrete microphones.
+    # Find the specific ReSpeaker device.
     for i, dev in enumerate(devices):
         if dev['max_input_channels'] >= 4:
             name = dev['name'].lower()
@@ -78,10 +89,6 @@ def run_real_audio_sim(duration_sec=5.0):
     # ==========================================
     # 2. High-Fidelity Spike Extraction Algorithm
     # ==========================================
-    # Problem: A 16kHz sample rate takes a reading every 62.5 microseconds. 
-    # An acoustic delay between mics might actually be 30 microseconds, which is smaller 
-    # than the digital sample rate! This creates massive quantization jitter.
-    #
     # Solution: We natively **upsample** the digital wave using mathematical spline/resampling 
     # curve fitting to an effective samplerate of 256kHz (which has ~3.9us resolution).
     UPSAMPLE_FACTOR = 16
@@ -95,8 +102,6 @@ def run_real_audio_sim(duration_sec=5.0):
     threshold = 0.20 * global_max # Threshold 20% of max loudness
     
     # Cross-Hardware Wiring Diagram:
-    # Hardware array might output channels out of order (e.g. mic 0 is top-right, etc.).
-    # We map hardware index back to our physics simulation (SNN) CCW coordinate matrix layout.
     snn_to_ch_map = {0: 0, 1: 3, 2: 2, 3: 1}
     
     all_raw_spikes = []
@@ -119,14 +124,8 @@ def run_real_audio_sim(duration_sec=5.0):
     all_raw_spikes.sort(key=lambda x: x[0])
     
     # ==========================================
-    # 3. Acoustic "Time Dilation" Matrix
+    # 3. Acoustic Event Clustering
     # ==========================================
-    # The LIF SNN is hand-tuned in kiindulo_kod for a 10cm physical mic array base geometry.
-    # However, the physical external ReSpeaker array is technically 4.65cm. 
-    # By artificially blowing up the relative time differences between the mics, 
-    # we make the 4.65cm array "look" identical to a 10cm array to our mathematics!
-    scale_factor = 0.1 / 0.0465
-    
     all_indices = []
     all_times = []
     events_t = []
@@ -135,26 +134,21 @@ def run_real_audio_sim(duration_sec=5.0):
     
     def process_cluster(cluster):
         if not cluster: return
-        # A cluster of spikes represents a single physical sound event.
-        # Calculate the median acoustic centroid time to maintain accurate time axes
         centroid = np.mean([s[0] for s in cluster])
         events_t.append(centroid)
         
-        # Scale only the *differences* in phase away from the centroid
+        # We no longer scale the delays artificially! We feed the exact raw spike
+        # timestamps into the simulation, because the SNN now accurately knows 
+        # the physical hardware is small.
         for t, idx in cluster:
-            dt = t - centroid
-            dt_scaled = dt * scale_factor
-            t_sim = centroid + dt_scaled
-            
-            all_times.append(t_sim)
+            all_times.append(t)
             all_indices.append(idx)
 
-    # Sound wave clusters usually last ~50 milliseconds. We logically isolate them.
     for spike in all_raw_spikes:
         if not current_cluster:
             current_cluster.append(spike)
         else:
-            if spike[0] - current_cluster[-1][0] < 0.050: 
+            if spike[0] - current_cluster[-1][0] < 0.050: #!!ez itt kerdeses
                 current_cluster.append(spike)
             else:
                 process_cluster(current_cluster)
@@ -172,7 +166,6 @@ def run_real_audio_sim(duration_sec=5.0):
     start_scope()
     defaultclock.dt = 1 * us
     
-    # We must format everything perfectly to avoid Brian2 crash states
     if all_times:
         min_t = min(all_times)
         if min_t < 0:
@@ -183,8 +176,13 @@ def run_real_audio_sim(duration_sec=5.0):
         print("Empty simulation. No loud peaks were found.")
         mics = SpikeGeneratorGroup(num_mics, [], [] * second)
         
-    # Plug the spike definitions into our decoupled LIF structure
-    mott_neurons, synapses, wta_syns = create_network(mics)
+    # Plug the specific ReSpeaker geometry and tighter physics logically into our flexible LIF function!
+    mott_neurons, synapses, wta_syns = create_network(mics=mics, 
+                                                      mic_x=mic_x, 
+                                                      mic_y=mic_y, 
+                                                      target_angles=target_angles,
+                                                      tau_leaky=respeaker_tau_leaky,
+                                                      c_sound=c_sound)
     
     spike_mon = SpikeMonitor(mott_neurons)
     state_mon = StateMonitor(mott_neurons, 'v', record=True) 

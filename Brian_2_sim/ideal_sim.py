@@ -7,20 +7,25 @@ from brian2 import *
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Import the core network and necessary constants from our refactored module
-from kiindulo_kod import create_network, target_angles, deg, c_sound, mic_x, mic_y, num_mics, num_neurons
+# Import the core network and necessary helper functions
+from kiindulo_kod import create_network, get_default_array_geometry, get_target_angles
 
 def run_simulation(true_angle_deg=67, plot_results=True):
     """
     Simulates a perfect acoustic event arriving from a specific angle, feeds it into 
     the LIF network, and plots the internal voltage traces of the neurons.
-    
-    This is an "ideal" simulation because it defines mathematically perfect arrival 
-    times without noise or distortion, used to verify the SNN's baseline accuracy.
     """
     start_scope() # Reset Brian2 simulator memory for a fresh run
     defaultclock.dt = 1 * us # Time step must be very small to resolve sub-millisecond physical delays
 
+    # ==========================================
+    # 0. Load Hardware Constraints (Modular params)
+    # ==========================================
+    mic_x, mic_y, num_mics = get_default_array_geometry()
+    target_angles, deg = get_target_angles(15)
+    num_neurons = len(target_angles)
+    c_sound = 343 * meter / second
+    
     # ==========================================
     # 1. Simulate the Ideal Acoustic Event
     # ==========================================
@@ -33,15 +38,19 @@ def run_simulation(true_angle_deg=67, plot_results=True):
     t_arrival += 5 * ms # Add a buffer time of 5ms to allow the simulation to settle
 
     # Encode these arrival times as Brian2 Spikes.
-    # The SpikeGeneratorGroup acts as a perfect microphone array, outputting 1 spike per mic.
     indices = array([0, 1, 2, 3])
     mics = SpikeGeneratorGroup(num_mics, indices, t_arrival)
 
     # ==========================================
     # 2. Setup the Spiking Neural Network (SNN)
     # ==========================================
-    # Instantiate our purely algorithmic LIF model from the kiindulo_kod module
-    mott_neurons, synapses, wta_syns = create_network(mics)
+    # Instantiate our purely algorithmic LIF model mapping the variables we just declared.
+    # Note: we can now dynamically pass in tau_leaky, speeds, or custom weights if we wanted!
+    mott_neurons, synapses, wta_syns = create_network(mics=mics, 
+                                                      mic_x=mic_x, 
+                                                      mic_y=mic_y, 
+                                                      target_angles=target_angles,
+                                                      c_sound=c_sound)
 
     # Monitors to record the states of the simulation for plotting
     spike_mon = SpikeMonitor(mott_neurons) # Records when and which neurons fire
