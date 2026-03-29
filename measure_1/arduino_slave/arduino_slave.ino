@@ -3,6 +3,10 @@
 // CONFIGURATION
 const int SERVO_PIN = 9;
 
+// Settling delay after movement (ms).
+// Increase this if the external speaker mount causes vibrations.
+const int SETTLE_DELAY_MS = 500;
+
 Servo myServo;
 int currentAngle = 45;
 
@@ -37,7 +41,8 @@ void loop() {
         }
         myServo.write(targetAngle);
         currentAngle = targetAngle;
-        delay(200);
+        // Wait for mechanical settling (important with external speaker mount)
+        delay(SETTLE_DELAY_MS);
         Serial.println("READY");
       }
     }
@@ -50,7 +55,7 @@ void loop() {
         delay(10);
       }
       currentAngle = 0;
-      delay(300);
+      delay(SETTLE_DELAY_MS);
       Serial.println("RESET_DONE");
     }
 

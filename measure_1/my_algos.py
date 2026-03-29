@@ -30,7 +30,7 @@ def gcc_phat_delay(sig1, sig2, fs, max_tau):
     
     # Apply human voice bandpass filter (300Hz - 3400Hz)
     freqs = np.fft.rfftfreq(n, d=1/fs)
-    voice_mask = (freqs >= 300) & (freqs <= 3400)
+    voice_mask = (freqs >= 300) & (freqs <= 6000)
     SIG1[~voice_mask] = 0
     SIG2[~voice_mask] = 0
     

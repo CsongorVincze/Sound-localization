@@ -1,7 +1,19 @@
 """
 Arduino Calibration Master - DoA Measurement System
-Controls a stepper motor and sound source to measure DoA algorithm accuracy.
-Compares multiple algorithms: GCC-PHAT, SRP-PHAT, Basic CC, MUSIC, CNN
+Controls a stepper motor to rotate an external speaker around a stationary
+ReSpeaker mic array. Measures DoA algorithm accuracy at each angle.
+
+Setup:
+    - ReSpeaker mic array is fixed (stationary) on the table.
+    - An external speaker is mounted on the servo arm.
+    - The servo rotates the speaker around the mic array.
+    - The speaker must be playing sound continuously during measurement
+      (e.g., white noise, pink noise, or a tone from a phone/laptop).
+
+Calibration:
+    The program lets you define which physical direction is 0°.
+    Point the USB port (or any reference direction) and calibrate.
+    All DoA readings are then reported relative to that calibrated zero.
 """
 import serial
 import serial.tools.list_ports
@@ -20,10 +32,12 @@ from pathlib import Path
 COM_PORT = None        # Set to 'COM3' etc. or None for auto-detect
 BAUD_RATE = 9600
 SAMPLE_RATE = 16000
-RECORDING_DURATION = 1.0
+RECORDING_DURATION = 3.0
 STEP_INCREMENT = 5     # degrees
 TOTAL_STEPS = 36       # 180 degrees total
 DEFAULT_START_ANGLE = 45  # Default servo home position
+SETTLE_TIME = 0.5      # seconds to wait after servo movement (let vibrations die)
+MIN_AUDIO_RMS = 50     # minimum RMS level to consider the speaker "active"
 
 
 
@@ -58,6 +72,21 @@ def send_reset(ser):
         line = ser.readline().decode().strip()
         if line == "RESET_DONE":
             return
+
+def check_audio_level(device_id, sample_rate, duration=0.5, channels=6):
+    """Record a short clip and return the RMS level across mic channels.
+    Used to verify the external speaker is actually producing sound."""
+    rec = sd.rec(
+        int(duration * sample_rate),
+        samplerate=sample_rate,
+        channels=channels,
+        device=device_id,
+        dtype='int16'
+    )
+    sd.wait()
+    mic_audio = rec[:, 1:5].astype(np.float64)
+    rms = np.sqrt(np.mean(mic_audio ** 2))
+    return rms
 
 # =============================================================================
 # MAIN
@@ -109,17 +138,45 @@ if respeaker_id is None:
     ard.close()
     exit(1)
 
+# 3. Verify external speaker
+print("\n[3] External Speaker Check")
+print("    Make sure your external speaker is playing sound (white noise, music, etc.)")
+input("    Press ENTER when the speaker is playing... ")
+
+print("    Checking audio level...", end=" ", flush=True)
+audio_rms = check_audio_level(respeaker_id, SAMPLE_RATE)
+print(f"RMS = {audio_rms:.0f}")
+
+if audio_rms < MIN_AUDIO_RMS:
+    print(f"    WARNING: Audio level is very low (RMS={audio_rms:.0f} < {MIN_AUDIO_RMS}).")
+    print("    The speaker may not be playing or the volume is too low.")
+    cont = input("    Continue anyway? (y/n): ").strip().lower()
+    if cont not in ['y', 'yes']:
+        print("    Aborting. Start the speaker and try again.")
+        ard.close()
+        exit(1)
+else:
+    print(f"    ✓ Speaker detected (RMS={audio_rms:.0f})")
+
 # =============================================================================
-# ALIGNMENT MODE (Optional)
+# CALIBRATION — Align USB Port to Speaker
 # =============================================================================
+#
+# The user physically verifies that the ReSpeaker's USB port points at the
+# external speaker.  The servo can be moved to position the speaker correctly.
+# Once confirmed, the program records the raw DoA angles → they become the 0°
+# reference.  Then it auto-detects whether the DoA direction matches the servo
+# direction (and flips if needed).
 
 print("\n" + "=" * 60)
-print(" Alignment Mode")
+print(" Calibration — USB Port Alignment")
 print("=" * 60)
-print(f"    Default start angle: {DEFAULT_START_ANGLE}°")
-print("    Enter an angle (0-180) to test, or:")
-print("    - 'skip' to start measurement from default")
-print("    - 'done' to start measurement from current position")
+print("    Move the servo until the external speaker is directly")
+print("    in front of the ReSpeaker's USB port.")
+print("    That direction will become 0° for all measurements.")
+print()
+print("    Enter a servo angle (0-180) to reposition the speaker.")
+print("    Type 'done' (or press Enter) when the USB port is aligned.")
 
 current_servo_angle = DEFAULT_START_ANGLE
 
@@ -131,50 +188,144 @@ print("OK")
 try:
     while True:
         user_input = input(f"\n    Servo [{current_servo_angle}°] > ").strip().lower()
-        
-        if user_input in ['skip', 's']:
-            current_servo_angle = DEFAULT_START_ANGLE
-            print(f"    Using default: {DEFAULT_START_ANGLE}°")
-            break
-            
+
         if user_input in ['done', 'd', 'q', '']:
-            print(f"    Starting from {current_servo_angle}°")
             break
-            
+
         try:
             target_angle = int(user_input)
             if target_angle < 0 or target_angle > 180:
                 print("    Error: Angle must be 0-180")
                 continue
-            
+
             print(f"    Moving to {target_angle}°...", end=" ", flush=True)
             send_goto(ard, target_angle)
             current_servo_angle = target_angle
             print("OK")
-            
-            # Ping and measure
+
+            # Quick DoA feedback so the user can see what the algorithms report
+            time.sleep(SETTLE_TIME)
             print("    Measuring...", end=" ", flush=True)
             recording = sd.rec(
-                int(1.0 * SAMPLE_RATE),
+                int(RECORDING_DURATION * SAMPLE_RATE),
                 samplerate=SAMPLE_RATE,
                 channels=6,
                 device=respeaker_id,
                 dtype='int16'
             )
             sd.wait()
-            
             raw_audio = recording[:, 1:5].astype(np.float64)
-            est_angle = get_gcc_phat_angle(raw_audio, SAMPLE_RATE)
-            err = est_angle if est_angle < 180 else est_angle - 360
-            print(f"DoA: {est_angle:5.1f}° (offset: {err:+5.1f}°)")
-            
+            for name, algo_func, _ in ALGORITHMS:
+                try:
+                    a = algo_func(raw_audio, SAMPLE_RATE)
+                    print(f"{name[:3]}:{a:5.1f}° ", end="")
+                except Exception:
+                    print(f"{name[:3]}:ERR ", end="")
+            print()
+
         except ValueError:
-            print("    Invalid input. Enter a number or 'done'/'skip'.")
+            print("    Invalid input. Enter a number or 'done'.")
 
 except KeyboardInterrupt:
     print("\n    Cancelled.")
     ard.close()
     exit(0)
+
+# ---- Record calibration offset (USB port = 0°) -----------------------------
+print(f"\n    USB port aligned at servo={current_servo_angle}°")
+print("    Recording calibration offset (3 samples)...", end=" ", flush=True)
+
+calibration_offsets = {name: 0.0 for name, _, _ in ALGORITHMS}
+n_cal = 3
+raw_readings = {name: [] for name, _, _ in ALGORITHMS}
+
+for i in range(n_cal):
+    cal_rec = sd.rec(
+        int(RECORDING_DURATION * SAMPLE_RATE),
+        samplerate=SAMPLE_RATE,
+        channels=6,
+        device=respeaker_id,
+        dtype='int16'
+    )
+    sd.wait()
+    cal_audio = cal_rec[:, 1:5].astype(np.float64)
+    for name, algo_func, _ in ALGORITHMS:
+        try:
+            raw_readings[name].append(algo_func(cal_audio, SAMPLE_RATE))
+        except Exception:
+            pass
+    if i < n_cal - 1:
+        time.sleep(0.3)
+
+for name, _, _ in ALGORITHMS:
+    vals = raw_readings[name]
+    if vals:
+        rads = [np.deg2rad(v) for v in vals]
+        mean_rad = np.arctan2(np.mean(np.sin(rads)), np.mean(np.cos(rads)))
+        calibration_offsets[name] = np.rad2deg(mean_rad) % 360
+
+print("OK")
+for name, _, _ in ALGORITHMS:
+    print(f"      {name:12s}: raw {calibration_offsets[name]:6.1f}° → 0°")
+
+# ---- Auto-detect direction --------------------------------------------------
+# Move the servo by +DIR_TEST° and see if the DoA increases or decreases.
+# If it decreases, the angle convention is reversed and we flip the sign.
+
+DIR_TEST = 15  # degrees to probe
+direction_sign = 1   # +1 = same direction as servo, -1 = reversed
+
+probe_target = current_servo_angle + DIR_TEST
+if probe_target > 180:
+    probe_target = current_servo_angle - DIR_TEST
+    actual_step = -(DIR_TEST)
+else:
+    actual_step = DIR_TEST
+
+print(f"\n    Auto-detecting direction (moving servo by {actual_step:+d}°)...", end=" ", flush=True)
+send_goto(ard, probe_target)
+time.sleep(SETTLE_TIME)
+
+probe_rec = sd.rec(
+    int(RECORDING_DURATION * SAMPLE_RATE),
+    samplerate=SAMPLE_RATE,
+    channels=6,
+    device=respeaker_id,
+    dtype='int16'
+)
+sd.wait()
+probe_audio = probe_rec[:, 1:5].astype(np.float64)
+
+votes = []
+for name, algo_func, _ in ALGORITHMS:
+    try:
+        probe_angle = algo_func(probe_audio, SAMPLE_RATE)
+        cal_angle = calibration_offsets[name]
+        # Signed angular difference
+        diff = probe_angle - cal_angle
+        if diff > 180:
+            diff -= 360
+        if diff < -180:
+            diff += 360
+        # If servo moved +15 and DoA moved +, same direction
+        # If servo moved +15 and DoA moved -, reversed
+        votes.append(np.sign(diff) * np.sign(actual_step))
+    except Exception:
+        pass
+
+if votes:
+    direction_sign = 1 if np.mean(votes) >= 0 else -1
+
+if direction_sign == -1:
+    print(f"REVERSED")
+    print("    ⚠  DoA direction is opposite to servo → will auto-correct")
+else:
+    print(f"OK")
+    print("    ✓  DoA direction matches servo direction")
+
+# Move back to calibration position
+send_goto(ard, current_servo_angle)
+time.sleep(SETTLE_TIME)
 
 # =============================================================================
 # MEASUREMENT LOOP
@@ -185,7 +336,8 @@ alignment_offset = current_servo_angle
 print("\n" + "=" * 60)
 print(" Starting Measurement")
 print("=" * 60)
-print(f"    Start Position: {alignment_offset}°")
+print(f"    Start position (servo): {alignment_offset}°  (= USB-port 0°)")
+print(f"    Direction sign: {'normal' if direction_sign == 1 else 'reversed (auto-corrected)'}")
 print(f"    Steps: {TOTAL_STEPS} x {STEP_INCREMENT}°")
 print(f"    Algorithms: {', '.join([a[0] for a in ALGORITHMS])}")
 
@@ -198,44 +350,24 @@ if max_steps < TOTAL_STEPS:
 # Results storage: {algorithm_name: [(true, est, err), ...]}
 results = {name: [] for name, _, _ in ALGORITHMS}
 
-# First, capture reference angles for absolute algorithms (SRP-PHAT, MUSIC)
-# These algorithms report absolute direction, so we need to know what angle
-# corresponds to "0° true angle" in their coordinate system
-print("\n    Capturing reference angles...", end=" ", flush=True)
-ref_recording = sd.rec(
-    int(RECORDING_DURATION * SAMPLE_RATE),
-    samplerate=SAMPLE_RATE,
-    channels=6,
-    device=respeaker_id,
-    dtype='int16'
-)
-sd.wait()
-ref_audio = ref_recording[:, 1:5].astype(np.float64)
-
-# Get reference angles for each algorithm
-reference_angles = {}
-for name, algo_func, _ in ALGORITHMS:
-    try:
-        reference_angles[name] = algo_func(ref_audio, SAMPLE_RATE)
-    except:
-        reference_angles[name] = 0
-print("OK")
-print(f"    Reference angles: " + ", ".join([f"{n[:3]}={v:.0f}°" for n, v in reference_angles.items()]))
-
 try:
     for step in range(TOTAL_STEPS):
         true_angle = step * STEP_INCREMENT
         servo_pos = alignment_offset + true_angle
-        
+
         print(f"\n--- Step {step + 1}/{TOTAL_STEPS} | True: {true_angle}° | Servo: {servo_pos}° ---")
-        
-        # Move
-        print("    Moving...", end=" ", flush=True)
+
+        # Move servo (rotates the external speaker to a new position)
+        print("    Moving speaker...", end=" ", flush=True)
         send_goto(ard, servo_pos)
         current_servo_angle = servo_pos
         print("OK")
-        
-        # Record
+
+        # Wait for mechanical settling (servo vibration + speaker mount)
+        if SETTLE_TIME > 0:
+            time.sleep(SETTLE_TIME)
+
+        # Record from stationary ReSpeaker
         print("    Recording...", end=" ", flush=True)
         recording = sd.rec(
             int(RECORDING_DURATION * SAMPLE_RATE),
@@ -246,29 +378,32 @@ try:
         )
         sd.wait()
         print("OK")
-        
+
         # Extract mic channels
         raw_audio = recording[:, 1:5].astype(np.float64)
-        
+
         # Calculate with each algorithm
         print("    Calculating: ", end="", flush=True)
         for name, algo_func, _ in ALGORITHMS:
             try:
                 raw_est = algo_func(raw_audio, SAMPLE_RATE)
-                
-                # For absolute algorithms (SRP-PHAT, MUSIC), convert to relative
-                # by subtracting the reference angle
-                ref = reference_angles[name]
-                est = (raw_est - ref + 360) % 360
-                
-                # Handle wraparound for display (keep in 0-180 range for comparison)
+                cal_offset = calibration_offsets[name]
+
+                # Apply calibration + direction correction
+                if direction_sign == 1:
+                    est = (raw_est - cal_offset + 360) % 360
+                else:
+                    # Mirror: if DoA goes the wrong way, flip around the offset
+                    est = (cal_offset - raw_est + 360) % 360
+
+                # Handle wraparound for display
                 if est > 180:
-                    est = est - 360  # Convert to negative for display
-                
+                    est = est - 360
+
                 err = abs(est - true_angle)
                 if err > 180:
                     err = 360 - err
-                    
+
                 results[name].append((true_angle, est, err))
                 print(f"{name[:3]}:{est:5.1f}° ", end="")
             except Exception as e:
@@ -374,8 +509,16 @@ ax4.set_title('Algorithm Comparison')
 ax4.grid(True, alpha=0.3, axis='y')
 
 plt.tight_layout()
-plt.savefig('doa_comparison_results.png', dpi=150)
-print(f"\n    Plot saved: doa_comparison_results.png")
+
+print("\n" + "=" * 60)
+plot_name = input("    Enter a name for the plot file (or press Enter for 'doa_comparison_results'): ").strip()
+if not plot_name:
+    plot_name = 'doa_comparison_results'
+if not plot_name.endswith('.png'):
+    plot_name += '.png'
+
+plt.savefig(plot_name, dpi=150)
+print(f"    Plot saved: {plot_name}")
 plt.show()
 
 print("\nDone.")
