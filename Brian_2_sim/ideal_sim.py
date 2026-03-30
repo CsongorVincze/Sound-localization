@@ -107,6 +107,7 @@ def run_simulation(true_angle_deg=67, plot_results=True, tau_leaky_val=115*us, v
         plt.xlim(4.5, 6.5)
 
         plt.tight_layout()
+        plt.savefig(r'c:\Users\Csongor\Documents\BME\EKÖP\Gyakorlos kodok\iromanyok\ideal_sim_plot.png', dpi=300, bbox_inches='tight')
         plt.show()
 
         # Terminal output

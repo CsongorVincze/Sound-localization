@@ -145,7 +145,19 @@ P'(q) = \sum_{i=0}^{M-1} \sum_{j=i+1}^{M-1} R_{ij}^{\text{PHAT}}(\tau)
 
 So, we calculate $\tau$ from $q$ and then from $q$ we calculate $P'(q)$. We do that for many points in space ($q$) and the point that gives the maximum value for $P'(q)$ will be selected as the estimated sound source position. As you can see this algorithm is computationally heavy, but it estimates the DoA more accurately than many of it's competitors. And it can handle echos and noise better.
 
-\section*{Neuromorphic hardware}
+With these methods we can achieve great results.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=1\textwidth]{../measure_1/Bach_Goldberg variation.png}
+    \caption{Comparing different algorithms}
+    \label{fig:algo_comparison}
+\end{figure}
+
+
+
+
+\section*{Neuromorphic approach}
 
 All the algorithms discussed earlier are precise mathematical methods designed for digital computers. While they are tunable and highly accurate, they demand significant computing power. An alternative approach is to use an analog, biologically-inspired method that avoids traditional digital computing.
 Coincidence detection using Leaky Integrate-and-Fire (LIF) neurons provides such a method for determining the Direction of Arrival (DoA).
@@ -157,6 +169,13 @@ These LIF neurons model actual biological neurons more accurately than standard 
 To leverage these properties, we introduce specific, hard-coded time delays to these signals. Assuming we have $n$ microphones, if $n$ delayed sound spikes reach a neuron nearly simultaneously, their integration overcomes the thershold of the neuron, and it fires. By mapping different delay combinations to specific spatial angles, we can detect the DoA based entirely on which neuron fires first.
 
 To verify this method, we implemented it in Python using the Brian 2 library, which is specifically designed to simulate spiking neural hardware. First, we created an ideal acoustic simulation. This assumes the sound source is in the far-field, producing perfectly parallel wavefronts without noise or echoes. We fed the physical geometric parameters of our ReSpeaker array into this simulation. It is crucial to tune the neuronal parameters carefully; otherwise, the coincidence overlap fails. To find the optimal parameters, we conducted a grid search algorithm. Through this, we successfully tuned the exponential decay constant ($\tau_{leaky}$) and the firing threshold voltage to perfectly estimate the DoA under ideal conditions.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=1\textwidth]{ideal_sim_plot.png}
+    \caption{Ideal acoustic simulation of a sound wave arriving from $67^{\circ}$ and the corresponding sub-threshold voltage traces of the Mott neurons.}
+    \label{fig:ideal_sim}
+\end{figure}
 
 \begin{figure}[htbp]
     \centering
@@ -175,6 +194,13 @@ To verify this method, we implemented it in Python using the Brian 2 library, wh
 While the algorithm performed perfectly in an ideal scenario, real acoustic environments are far from optimal. To verify the viability of this method in real-world conditions, I created a simulation that processes digital audio data recorded directly from a physical sound source using the ReSpeaker mic array. First, the four raw microphone channels were mathematically upsampled to a significantly higher frequency using SciPy. This was necessary because the original 16 kHz sampling rate suffered from digital quantization jitter, lacking the sub-millisecond physical precision required to accurately run the SNN coincidence math on such a small hardware array.
  
 Next, the program implements a dynamic amplitude threshold: during silence, no spikes are generated. If the audio crosses this loudness threshold, an algorithm isolates the peak and a precise discrete spike is generated to represent the leading sound wavefront. These exact physical spikes are then routed through the spatial delay matrix and sent into the LIF neuron layer to execute the localization.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=1\textwidth]{../Brian_2_sim/tapsolas_multheten.png}
+    \caption{Predicting the DoA with coincidence detection simulation. The sound source was clapping.}
+    \label{fig:real_world_clap}
+\end{figure}
 
 
 
