@@ -1,0 +1,9 @@
+sounddevice>=0.4.6
+soundfile>=0.12.1
+pyserial>=3.5
+numpy>=1.24.0
+torch>=2.12.0
+pyusb>=1.2.1
+# For download_sources.py:
+datasets>=2.14.0
+huggingface_hub>=0.20.0

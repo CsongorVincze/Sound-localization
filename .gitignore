@@ -21,7 +21,41 @@ venv.bak/
 # Project specific
 shit/
 shit_2/
+trash/
+Trash/
+tmp/
+temp/
 Brain_2_sim/
+
+# Data collection artifacts
+DATA_COLLECTION/sources/
+DATA_COLLECTION/sessions/
+DATA_COLLECTION/test_respeaker_raw.wav
+
+# Audio / dataset files
+*.wav
+*.flac
+*.mp3
+*.ogg
+*.m4a
+
+# Model checkpoints and feature caches
+*.pt
+*.pth
+*.ckpt
+*.npz
+*.npy
+
+# Generated evaluation outputs
+*_predictions.csv
+*_by_angle.csv
+*_mse_by_angle.csv
+*_mean_by_angle.png
+*_mse_by_angle.png
+srp_phat_*.csv
+srp_phat_*.png
+neural_doa_*.csv
+neural_doa_*.png
 
 # Logs and databases
 *.log

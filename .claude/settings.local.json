@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Csongor\\\\Documents\\\\BME\\\\EKÖP\\\\Gyakorlos_kodok\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Csongor\\\\Documents\\\\BME\\\\EKÖP\\\\Gyakorlos_kodok\" -Recurse -Filter \"*.py\")",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "PowerShell(cmd /c \"dir /b `\"C:\\\\Users\\\\Csongor\\\\Documents\\\\BME\\\\EKÖP\\\\Gyakorlos_kodok\\\\DATA_COLLECTION\\\\sessions\\\\session_20260517_004638\\\\recordings`\"\")"
+    ]
+  }
+}
