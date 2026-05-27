@@ -12,6 +12,8 @@ import soundfile as sf
 DEFAULT_VOICE_DIR = Path(
     "sessions/session_20260521_005414/recordings/voice"
 )
+PICTURE_DIR = Path(__file__).resolve().parent / "evaluation_pictures"
+RESULT_DIR = Path(__file__).resolve().parent / "evaluation_results"
 
 SPEED_OF_SOUND = 343.0
 MIC_RADIUS_M = 0.035
@@ -170,6 +172,15 @@ def write_csv(path, rows, fieldnames):
         writer.writerows(rows)
 
 
+def output_name_prefix(root_dir):
+    parts = Path(root_dir).parts
+    if "sessions" in parts:
+        idx = parts.index("sessions")
+        suffix = "_".join(parts[idx + 1:])
+        return suffix or "sessions"
+    return Path(root_dir).name or "evaluation"
+
+
 def plot_mse(path, angle_rows):
     plt.figure(figsize=(14, 5))
     for scenario in PAIR_SCENARIOS:
@@ -214,6 +225,85 @@ def plot_mean_doa(path, angle_rows):
     plt.close()
 
 
+def plot_mean_error_bars(path, angle_rows):
+    angles = sorted({r["truth_deg"] for r in angle_rows})
+    bar_width = 1.25
+    offsets = np.linspace(
+        -bar_width * (len(PAIR_SCENARIOS) - 1) / 2,
+        bar_width * (len(PAIR_SCENARIOS) - 1) / 2,
+        len(PAIR_SCENARIOS),
+    )
+
+    plt.figure(figsize=(18, 6))
+    for offset, scenario in zip(offsets, PAIR_SCENARIOS):
+        scenario_rows = {
+            r["truth_deg"]: r for r in angle_rows
+            if r["scenario"] == scenario
+        }
+        mean_errors = [scenario_rows[angle]["mae_deg"] for angle in angles]
+        plt.bar(
+            np.asarray(angles) + offset,
+            mean_errors,
+            width=bar_width,
+            label=scenario,
+        )
+
+    plt.xlabel("Ground-truth DoA (deg)")
+    plt.ylabel("Mean absolute error (deg)")
+    plt.title("SRP-PHAT mean DoA error per angle - voice recordings")
+    plt.xticks(np.arange(0, 360, 10), rotation=90)
+    plt.legend()
+    plt.grid(axis="y", alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(path, dpi=150)
+    plt.close()
+
+
+def plot_mean_error_bar_per_scenario(picture_dir, prefix, angle_rows):
+    hungarian_names = {
+        "2_pairs_opposite": "2 mikrofonpár - szemközti párok",
+        "4_pairs_perimeter": "4 mikrofonpár - szomszédos párok",
+        "6_pairs_all": "6 mikrofonpár - összes pár",
+    }
+    colors = {
+        "2_pairs_opposite": "#4477AA",
+        "4_pairs_perimeter": "#EE6677",
+        "6_pairs_all": "#228833",
+    }
+    output_paths = []
+    max_error = max(
+        r["mae_deg"] for r in angle_rows
+        if r["scenario"] in PAIR_SCENARIOS
+    )
+    y_max = max(5.0, np.ceil((max_error + 0.5) / 2.0) * 2.0)
+    y_ticks = np.arange(0.0, y_max + 0.1, 1.0)
+
+    for scenario in PAIR_SCENARIOS:
+        scenario_rows = [
+            r for r in angle_rows
+            if r["scenario"] == scenario
+        ]
+        angles = [r["truth_deg"] for r in scenario_rows]
+        mean_errors = [r["mae_deg"] for r in scenario_rows]
+
+        path = picture_dir / f"{prefix}_{scenario}_atlagos_hiba_oszlopdiagram.png"
+        plt.figure(figsize=(16, 5))
+        plt.bar(angles, mean_errors, width=3.5, color=colors[scenario])
+        plt.xlabel("Valós beesési szög (fok)")
+        plt.ylabel("Átlagos abszolút hiba (fok)")
+        plt.title(f"SRP-PHAT átlagos DoA hiba szögenként - {hungarian_names[scenario]}")
+        plt.xticks(np.arange(0, 360, 10), rotation=90)
+        plt.ylim(0, y_max)
+        plt.yticks(y_ticks)
+        plt.grid(axis="y", alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(path, dpi=150)
+        plt.close()
+        output_paths.append(path)
+
+    return output_paths
+
+
 def main():
     parser = argparse.ArgumentParser(description="Evaluate SRP-PHAT DoA on voice recordings.")
     parser.add_argument("--voice-dir", type=Path, default=DEFAULT_VOICE_DIR)
@@ -221,10 +311,13 @@ def main():
 
     rows, angle_rows = evaluate(args.voice_dir)
 
-    pred_csv = args.voice_dir / "srp_phat_predictions.csv"
-    mse_csv = args.voice_dir / "srp_phat_mse_by_angle.csv"
-    mse_plot_path = args.voice_dir / "srp_phat_mse_by_angle.png"
-    doa_plot_path = args.voice_dir / "srp_phat_mean_doa_by_angle.png"
+    PICTURE_DIR.mkdir(parents=True, exist_ok=True)
+    RESULT_DIR.mkdir(parents=True, exist_ok=True)
+    prefix = output_name_prefix(args.voice_dir)
+    pred_csv = RESULT_DIR / f"{prefix}_srp_phat_predictions.csv"
+    mse_csv = RESULT_DIR / f"{prefix}_srp_phat_mse_by_angle.csv"
+    mse_plot_path = PICTURE_DIR / f"{prefix}_srp_phat_mse_by_angle.png"
+    doa_plot_path = PICTURE_DIR / f"{prefix}_srp_phat_mean_doa_by_angle.png"
 
     pred_fields = ["file", "truth_deg"]
     for scenario in PAIR_SCENARIOS:
@@ -239,6 +332,11 @@ def main():
     ])
     plot_mse(mse_plot_path, angle_rows)
     plot_mean_doa(doa_plot_path, angle_rows)
+    mean_error_bar_paths = plot_mean_error_bar_per_scenario(
+        PICTURE_DIR,
+        prefix,
+        angle_rows,
+    )
 
     print(f"Files processed: {len(rows)}")
     print(f"Angles processed: {len({r['truth_deg'] for r in angle_rows})}")
@@ -256,6 +354,8 @@ def main():
     print(f"Saved: {mse_csv}")
     print(f"Saved: {mse_plot_path}")
     print(f"Saved: {doa_plot_path}")
+    for path in mean_error_bar_paths:
+        print(f"Saved: {path}")
 
 
 if __name__ == "__main__":
